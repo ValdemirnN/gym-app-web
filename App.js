@@ -60,7 +60,6 @@ export default function App() {
             maxWidth: APP_MAX_WIDTH,
             overflow: 'hidden',
             backgroundColor: '#0B0F14',
-            ...(isDesktopWeb ? { borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#1F2937' } : null),
           }}
         >
           {content}
