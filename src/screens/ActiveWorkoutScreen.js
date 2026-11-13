@@ -1,0 +1,909 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  Modal,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { insertRow } from '../lib/dataClient';
+import { colors, radius } from '../theme/theme';
+import { s, vs, ms, fs, isSmallDevice, screenPaddingH, screenPaddingTop } from '../utils/responsive';
+
+export default function ActiveWorkoutScreen({ route, navigation }) {
+  const { logId, workoutLogId, workoutName, exercises } = route.params;
+  // Aceita tanto logId (StudentWorkoutViewScreen) quanto workoutLogId (WorkoutDetailScreen)
+  const resolvedLogId = logId ?? workoutLogId;
+
+  const [startedAt] = useState(() => Date.now());
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
+  const formatElapsed = (totalSeconds) => {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  // Estrutura: { [exerciseId]: [{reps, weight, done}, ...] }
+  const initialState = {};
+  const initialCardioState = {};
+  (exercises || []).forEach((item) => {
+    if (item.exercises.exercise_type === 'cardio') {
+      initialCardioState[item.exercises.id] = {
+        duration: item.target_duration_minutes ? String(item.target_duration_minutes) : '',
+        distance: item.target_distance_km ? String(item.target_distance_km) : '',
+        intensity: item.target_intensity || 'moderada',
+        done: false,
+      };
+      return;
+    }
+    initialState[item.exercises.id] = Array.from({ length: item.target_sets }, () => ({
+      reps: String(item.target_reps),
+      weight: '',
+      done: false,
+    }));
+  });
+  const [sets, setSets] = useState(initialState);
+  const [cardio, setCardio] = useState(initialCardioState);
+  const [finishing, setFinishing] = useState(false);
+
+  // status por exercício: { [exerciseId]: { status: 'pulado'|'substituido', reason, substituteId, substituteName } }
+  const [exerciseStatus, setExerciseStatus] = useState({});
+
+  // mapa exerciseId -> lista de substitutos cadastrados pelo personal pra esse item do treino
+  const allowedSubstitutesByExercise = {};
+  (exercises || []).forEach((item) => {
+    allowedSubstitutesByExercise[item.exercises.id] = (item.workout_exercise_substitutes || [])
+      .filter((s) => s.exercises)
+      .map((s) => ({
+        ...s.exercises,
+        target_sets: s.target_sets || item.target_sets,
+        target_reps: s.target_reps || item.target_reps,
+      }));
+  });
+
+  // modal: pular exercício
+  const [skipTarget, setSkipTarget] = useState(null); // { exerciseId, name }
+  const [skipReasonText, setSkipReasonText] = useState('');
+
+  // modal: substituir exercício (só entre as opções que o personal cadastrou)
+  const [subTarget, setSubTarget] = useState(null); // { exerciseId, name, options }
+  const [subChosen, setSubChosen] = useState(null); // { id, name, target_sets, target_reps }
+  const [subReasonText, setSubReasonText] = useState('');
+  const [subChosenSets, setSubChosenSets] = useState(0);
+  const [subChosenReps, setSubChosenReps] = useState(0);
+  const [subChosenInstructions, setSubChosenInstructions] = useState('');
+  const [subChosenVideoId, setSubChosenVideoId] = useState('');
+
+  const updateSet = (exerciseId, index, field, value) => {
+    setSets((prev) => {
+      const copy = { ...prev };
+      copy[exerciseId] = [...copy[exerciseId]];
+      copy[exerciseId][index] = { ...copy[exerciseId][index], [field]: value };
+      return copy;
+    });
+  };
+
+  const toggleDone = (exerciseId, index) => {
+    updateSet(exerciseId, index, 'done', !sets[exerciseId][index].done);
+  };
+
+  const openActionsMenu = (item) => {
+    const exerciseId = item.exercises.id;
+    const status = exerciseStatus[exerciseId];
+    const buttons = [];
+
+    if (status) {
+      buttons.push({
+        text: 'Desfazer e voltar ao normal',
+        onPress: () =>
+          setExerciseStatus((prev) => {
+            const copy = { ...prev };
+            delete copy[exerciseId];
+            return copy;
+          }),
+      });
+    } else {
+      buttons.push({
+        text: 'Não vou fazer esse exercício',
+        onPress: () => {
+          setSkipReasonText('');
+          setSkipTarget({ exerciseId, name: item.exercises.name });
+        },
+      });
+      const options = allowedSubstitutesByExercise[exerciseId] || [];
+      buttons.push({
+        text: options.length > 0 ? 'Fazer outro exercício no lugar' : 'Fazer outro exercício no lugar (nenhum cadastrado)',
+        onPress: () => {
+          if (options.length === 0) {
+            Alert.alert(
+              'Nenhum substituto cadastrado',
+              'Seu personal ainda não cadastrou um exercício substituto pra esse. Fale com ele pelo chat.'
+            );
+            return;
+          }
+          setSubChosen(null);
+          setSubReasonText('');
+          setSubTarget({ exerciseId, name: item.exercises.name, options });
+        },
+      });
+    }
+    buttons.push({ text: 'Cancelar', style: 'cancel' });
+
+    Alert.alert(item.exercises.name, 'O que você quer fazer com esse exercício?', buttons);
+  };
+
+  const confirmSkip = () => {
+    if (!skipReasonText.trim()) {
+      Alert.alert('Conta pra gente', 'Escreva rapidamente o motivo de não fazer esse exercício.');
+      return;
+    }
+    setExerciseStatus((prev) => ({
+      ...prev,
+      [skipTarget.exerciseId]: { status: 'pulado', reason: skipReasonText.trim() },
+    }));
+    setSkipTarget(null);
+    setSkipReasonText('');
+  };
+
+  const confirmSubstitute = () => {
+    if (!subChosen) {
+      Alert.alert('Escolha um exercício', 'Toque em um exercício da lista para substituir.');
+      return;
+    }
+    
+    const finalSets = subChosenSets || subChosen.target_sets || 1;
+    const finalReps = subChosenReps || subChosen.target_reps || 12;
+    const finalInstructions = subChosenInstructions || subChosen.execution_instructions || '';
+    const finalVideoId = subChosenVideoId || subChosen.video_id || null;
+    
+    setExerciseStatus((prev) => ({
+      ...prev,
+      [subTarget.exerciseId]: {
+        status: 'substituido',
+        substituteId: subChosen.id,
+        substituteName: subChosen.name,
+        reason: subReasonText.trim() || null,
+        customInstructions: finalInstructions,
+        customVideoId: finalVideoId,
+      },
+    }));
+    
+    // Cria novo array de sets com os valores finais (séries/reps editadas ou originais)
+    setSets((prev) => ({
+      ...prev,
+      [subTarget.exerciseId]: Array.from({ length: finalSets }, () => ({
+        reps: String(finalReps),
+        weight: '',
+        done: false,
+      })),
+    }));
+    
+    // Reset
+    setSubTarget(null);
+    setSubChosen(null);
+    setSubReasonText('');
+    setSubChosenSets(0);
+    setSubChosenReps(0);
+    setSubChosenInstructions('');
+    setSubChosenVideoId('');
+  };
+
+  const openVideo = (item) => {
+    const videoId = item.exercises.video_id;
+    if (!videoId) {
+      Alert.alert('Sem vídeo', 'Seu personal ainda não adicionou um vídeo de demonstração para esse exercício.');
+      return;
+    }
+    navigation.navigate('VideoPlayer', { videoId, title: item.exercises.name });
+  };
+
+  // ── Navegar para a tela de resumo/feedback ────────────────────────────────
+  const handleFinalizarTreino = async () => {
+    setFinishing(true);
+
+    const rows = [];
+    Object.entries(sets || {}).forEach(([exerciseId, setList]) => {
+      const status = exerciseStatus[exerciseId];
+      if (status?.status === 'pulado') return;
+
+      const effectiveExerciseId = status?.status === 'substituido' ? status.substituteId : exerciseId;
+
+      (setList || []).forEach((s, index) => {
+        if (s.done) {
+          rows.push({
+            workout_log_id: resolvedLogId,
+            exercise_id: effectiveExerciseId,
+            set_number: index + 1,
+            reps_done: parseInt(s.reps) || 0,
+            weight_kg: parseFloat(s.weight) || 0,
+          });
+        }
+      });
+    });
+
+    // Cardio: só entra no registro o que o aluno marcou como concluído
+    const cardioRows = [];
+    Object.entries(cardio || {}).forEach(([exerciseId, c]) => {
+      const status = exerciseStatus[exerciseId];
+      if (status?.status === 'pulado' || !c.done) return;
+      const effectiveExerciseId = status?.status === 'substituido' ? status.substituteId : exerciseId;
+      cardioRows.push({
+        workout_log_id: resolvedLogId,
+        exercise_id: effectiveExerciseId,
+        duration_minutes: c.duration ? parseFloat(c.duration.replace(',', '.')) : null,
+        distance_km: c.distance ? parseFloat(c.distance.replace(',', '.')) : null,
+        intensity: c.intensity || null,
+      });
+    });
+
+    let wentOffline = false;
+
+    if (rows.length > 0) {
+      const { offline, error } = await insertRow('workout_log_sets', rows);
+      if (error) {
+        setFinishing(false);
+        Alert.alert('Erro', error.message);
+        return;
+      }
+      wentOffline = wentOffline || offline;
+    }
+
+    if (cardioRows.length > 0) {
+      const { offline, error } = await insertRow('workout_log_cardio', cardioRows);
+      if (error) {
+        setFinishing(false);
+        Alert.alert('Erro', error.message);
+        return;
+      }
+      wentOffline = wentOffline || offline;
+    }
+
+    // Registra os exercícios pulados/substituídos
+    const statusRows = Object.entries(exerciseStatus).map(([exerciseId, s]) => ({
+      workout_log_id: resolvedLogId,
+      exercise_id: exerciseId,
+      status: s.status,
+      substitute_exercise_id: s.status === 'substituido' ? s.substituteId : null,
+      reason: s.reason || null,
+    }));
+
+    if (statusRows.length > 0) {
+      const { offline, error: statusError } = await insertRow('workout_log_exercise_status', statusRows);
+      if (statusError) {
+        setFinishing(false);
+        Alert.alert('Erro', statusError.message);
+        return;
+      }
+      wentOffline = wentOffline || offline;
+    }
+
+    setFinishing(false);
+
+    // Navega para a tela de resumo — o feedback e o updateRow final ficam lá
+    const finishedAtIso = new Date().toISOString();
+    navigation.replace('WorkoutSummary', {
+      logId: resolvedLogId,
+      workoutName,
+      elapsedSeconds,
+      startedAt,
+      finishedAt: finishedAtIso,
+      wentOffline,
+    });
+  };
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 20, paddingTop: 60, paddingBottom: 40 }}>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>{workoutName}</Text>
+        <View style={styles.timerBadge}>
+          <Feather name="clock" size={13} color={colors.accent} />
+          <Text style={styles.timerText}> {formatElapsed(elapsedSeconds)}</Text>
+        </View>
+      </View>
+
+      {(exercises || []).map((item) => {
+        const exerciseId = item.exercises.id;
+        const status = exerciseStatus[exerciseId];
+        const comboPartners = item.combo_group
+          ? (exercises || []).filter((e) => e.combo_group === item.combo_group && e.exercises.id !== exerciseId).map((e) => e.exercises.name)
+          : [];
+
+        return (
+          <View key={exerciseId} style={styles.exerciseBlock}>
+            {item.combo_group && (
+              <View style={styles.comboBadge}>
+                <Feather name="repeat" size={11} color={colors.amber} />
+                <Text style={styles.comboBadgeText}>
+                  {' '}Combinado {item.combo_group}
+                  {comboPartners.length > 0 ? ` · alterne com ${comboPartners.join(', ')}` : ''}
+                </Text>
+              </View>
+            )}
+            <View style={styles.exerciseHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.exerciseName}>
+                  {status?.status === 'substituido' ? status.substituteName : item.exercises.name}
+                </Text>
+                {status?.status === 'substituido' && (
+                  <Text style={styles.substitutedLabel}>no lugar de {item.exercises.name}</Text>
+                )}
+                {item.exercises.instructions ? (
+                  <Text style={styles.instructionsText}>{item.exercises.instructions}</Text>
+                ) : null}
+                {item.progression_note ? (
+                  <Text style={styles.progressionNote}>↗ {item.progression_note}</Text>
+                ) : null}
+                {item.exercises.video_id ? (
+                  <TouchableOpacity style={styles.videoButton} onPress={() => openVideo(item)}>
+                    <View style={styles.videoThumb}>
+                      <Feather name="play" size={13} color="#fff" />
+                    </View>
+                    <Text style={styles.videoButtonText}>Ver vídeo</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <TouchableOpacity style={styles.menuButton} onPress={() => openActionsMenu(item)}>
+                <Feather name="more-vertical" size={18} color={colors.textDim} />
+              </TouchableOpacity>
+            </View>
+
+            {status?.status === 'pulado' ? (
+              <View style={styles.skippedBox}>
+                <Feather name="x-circle" size={14} color={colors.red} />
+                <Text style={styles.skippedText}>Exercício pulado — {status.reason}</Text>
+              </View>
+            ) : item.exercises.exercise_type === 'cardio' ? (
+              <View style={styles.cardioBlock}>
+                {(item.target_duration_minutes || item.target_distance_km || item.target_intensity) && (
+                  <Text style={styles.cardioTarget}>
+                    Meta:{' '}
+                    {[
+                      item.target_duration_minutes ? `${item.target_duration_minutes} min` : null,
+                      item.target_distance_km ? `${item.target_distance_km} km` : null,
+                      item.target_intensity ? `intensidade ${item.target_intensity}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                )}
+                <View style={styles.cardioRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardioLabel}>Minutos</Text>
+                    <TextInput
+                      style={styles.setInput}
+                      placeholder="min"
+                      placeholderTextColor={colors.textDim2}
+                      keyboardType="number-pad"
+                      value={cardio[exerciseId]?.duration || ''}
+                      onChangeText={(v) => setCardio((prev) => ({ ...prev, [exerciseId]: { ...prev[exerciseId], duration: v } }))}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardioLabel}>Distância (km)</Text>
+                    <TextInput
+                      style={styles.setInput}
+                      placeholder="km"
+                      placeholderTextColor={colors.textDim2}
+                      keyboardType="decimal-pad"
+                      value={cardio[exerciseId]?.distance || ''}
+                      onChangeText={(v) => setCardio((prev) => ({ ...prev, [exerciseId]: { ...prev[exerciseId], distance: v } }))}
+                    />
+                  </View>
+                </View>
+                <View style={styles.intensityRow}>
+                  {['leve', 'moderada', 'intensa'].map((level) => (
+                    <TouchableOpacity
+                      key={level}
+                      style={[styles.intensityChip, cardio[exerciseId]?.intensity === level && styles.intensityChipActive]}
+                      onPress={() => setCardio((prev) => ({ ...prev, [exerciseId]: { ...prev[exerciseId], intensity: level } }))}
+                    >
+                      <Text
+                        style={[
+                          styles.intensityChipText,
+                          cardio[exerciseId]?.intensity === level && styles.intensityChipTextActive,
+                        ]}
+                      >
+                        {level}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TouchableOpacity
+                  style={[styles.cardioDoneButton, cardio[exerciseId]?.done && styles.cardioDoneButtonActive]}
+                  onPress={() => setCardio((prev) => ({ ...prev, [exerciseId]: { ...prev[exerciseId], done: !prev[exerciseId]?.done } }))}
+                >
+                  <Feather name={cardio[exerciseId]?.done ? 'check-circle' : 'circle'} size={16} color={cardio[exerciseId]?.done ? '#04170F' : colors.textDim} />
+                  <Text style={[styles.cardioDoneText, cardio[exerciseId]?.done && styles.cardioDoneTextActive]}>
+                    {' '}{cardio[exerciseId]?.done ? 'Concluído' : 'Marcar como concluído'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              sets[exerciseId].map((s, index) => (
+                <View key={index} style={styles.setRow}>
+                  <Text style={styles.setLabel}>Série {index + 1}</Text>
+
+                  <TextInput
+                    style={styles.setInput}
+                    placeholder="Kg"
+                    placeholderTextColor={colors.textDim2}
+                    keyboardType="numeric"
+                    value={s.weight}
+                    onChangeText={(v) => updateSet(exerciseId, index, 'weight', v)}
+                  />
+                  <TextInput
+                    style={styles.setInput}
+                    placeholder="Reps"
+                    placeholderTextColor={colors.textDim2}
+                    keyboardType="numeric"
+                    value={s.reps}
+                    onChangeText={(v) => updateSet(exerciseId, index, 'reps', v)}
+                  />
+
+                  <TouchableOpacity
+                    style={[styles.doneButton, s.done && styles.doneButtonActive]}
+                    onPress={() => toggleDone(exerciseId, index)}
+                  >
+                    {s.done ? <Feather name="check" size={16} color="#04170F" /> : null}
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+          </View>
+        );
+      })}
+
+      <TouchableOpacity
+        style={styles.finishButton}
+        onPress={handleFinalizarTreino}
+        disabled={finishing}
+        activeOpacity={0.85}
+      >
+        <Feather name={finishing ? 'loader' : 'flag'} size={s(16)} color="#04170F" style={{ marginRight: s(6) }} />
+        <Text style={styles.finishButtonText}>{finishing ? 'Salvando...' : 'Finalizar Treino'}</Text>
+      </TouchableOpacity>
+
+      {/* Modal: motivo de pular o exercício */}
+      <Modal visible={!!skipTarget} transparent animationType="slide" onRequestClose={() => setSkipTarget(null)}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Por que não vai fazer "{skipTarget?.name}"?</Text>
+            <TextInput
+              style={styles.modalTextArea}
+              placeholder="Ex: dor no ombro, sem equipamento disponível..."
+              placeholderTextColor={colors.textDim2}
+              value={skipReasonText}
+              onChangeText={setSkipReasonText}
+              multiline
+              autoFocus
+            />
+            <TouchableOpacity style={styles.modalConfirm} onPress={confirmSkip}>
+              <Text style={styles.modalConfirmText}>Confirmar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalClose} onPress={() => setSkipTarget(null)}>
+              <Text style={styles.modalCloseText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Modal: escolher exercício substituto */}
+      <Modal visible={!!subTarget} transparent animationType="slide" onRequestClose={() => setSubTarget(null)}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.modalBox}>
+            <ScrollView bounces={false}>
+              <Text style={styles.modalTitle}>Trocar "{subTarget?.name}" por qual exercício?</Text>
+
+              {subChosen ? (
+                <View style={styles.chosenDetail}>
+                  <View style={styles.chosenHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.chosenText}>{subChosen.name}</Text>
+                      {subChosen.muscle_group && (
+                        <Text style={styles.chosenGroup}>{subChosen.muscle_group}</Text>
+                      )}
+                    </View>
+                    <TouchableOpacity onPress={() => {
+                      setSubChosen(null);
+                      setSubChosenSets(0);
+                      setSubChosenReps(0);
+                      setSubChosenInstructions('');
+                      setSubChosenVideoId('');
+                    }}>
+                      <Text style={styles.chosenRemove}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                    {/* Séries e reps */}
+                  <Text style={styles.detailLabel}>Séries x repetições</Text>
+                  <View style={styles.repsRow}>
+                    <View style={styles.repsControl}>
+                      <TouchableOpacity onPress={() => setSubChosenSets(Math.max(1, subChosenSets - 1))} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                        <Text style={styles.repsBtn}>−</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.repsValue}>{subChosenSets || subChosen.target_sets || 1}</Text>
+                      <TouchableOpacity onPress={() => setSubChosenSets((subChosenSets || subChosen.target_sets || 1) + 1)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                        <Text style={styles.repsBtn}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.repsX}>x</Text>
+                    <View style={styles.repsControl}>
+                      <TouchableOpacity onPress={() => setSubChosenReps(Math.max(1, subChosenReps - 1))} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                        <Text style={styles.repsBtn}>−</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.repsValue}>{subChosenReps || subChosen.target_reps || 12}</Text>
+                      <TouchableOpacity onPress={() => setSubChosenReps((subChosenReps || subChosen.target_reps || 12) + 1)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                        <Text style={styles.repsBtn}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Instruções - EDITÁVEL */}
+                  <Text style={styles.detailLabel}>Instruções de execução</Text>
+                  <TextInput
+                    style={styles.instructionsInput}
+                    placeholder="Adicionar instruções personalizadas (opcional)"
+                    placeholderTextColor={colors.textDim2}
+                    value={subChosenInstructions || subChosen.execution_instructions || ''}
+                    onChangeText={setSubChosenInstructions}
+                    multiline
+                    maxHeight={80}
+                  />
+
+                  {/* Vídeo - COM FUNÇÃO */}
+                  <Text style={styles.detailLabel}>Vídeo de demonstração</Text>
+                  <TouchableOpacity 
+                    style={styles.videoButton}
+                    onPress={() => {
+                      navigation.navigate('UploadVideo', {
+                        exerciseId: subChosen.id,
+                        exerciseName: subChosen.name,
+                        returnScreen: 'ActiveWorkout',
+                        onVideoAdded: (videoId) => {
+                          setSubChosenVideoId(videoId);
+                        },
+                      });
+                    }}
+                  >
+                    <Feather name={subChosenVideoId || subChosen.video_id ? 'film' : 'video-off'} size={16} color={colors.accent} />
+                    <Text style={styles.videoButtonText}>
+                      {subChosenVideoId || subChosen.video_id ? '✓ Vídeo anexado' : '+ Anexar vídeo'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.modalHint}>Escolhidos pelo seu personal pra esse exercício:</Text>
+                  <FlatList
+                    scrollEnabled={false}
+                    data={subTarget?.options || []}
+                    keyExtractor={(e) => e.id}
+                    ListEmptyComponent={<Text style={styles.modalEmpty}>Nenhum exercício cadastrado.</Text>}
+                    renderItem={({ item: ex }) => (
+                      <TouchableOpacity style={styles.catalogRow} onPress={() => {
+                        setSubChosen(ex);
+                        setSubChosenSets(0);
+                        setSubChosenReps(0);
+                        setSubChosenInstructions('');
+                        setSubChosenVideoId('');
+                      }}>
+                        <Text style={styles.catalogRowText}>{ex.name}</Text>
+                        {ex.muscle_group ? <Text style={styles.catalogRowGroup}>{ex.muscle_group}</Text> : null}
+                      </TouchableOpacity>
+                    )}
+                  />
+                </>
+              )}
+
+              <TextInput
+                style={[styles.modalTextArea, { marginTop: 12 }]}
+                placeholder="Motivo da troca (opcional)"
+                placeholderTextColor={colors.textDim2}
+                value={subReasonText}
+                onChangeText={setSubReasonText}
+                multiline
+              />
+
+              <TouchableOpacity style={styles.modalConfirm} onPress={confirmSubstitute}>
+                <Text style={styles.modalConfirmText}>Adicionar substituto</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalClose} onPress={() => {
+                setSubTarget(null);
+                setSubChosen(null);
+                setSubReasonText('');
+                setSubChosenSets(0);
+                setSubChosenReps(0);
+                setSubChosenInstructions('');
+                setSubChosenVideoId('');
+              }}>
+                <Text style={styles.modalCloseText}>Cancelar</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bg },
+  title: { fontSize: fs(20), fontWeight: '800', color: colors.text, flexShrink: 1 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: vs(20) },
+  timerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accentGlow,
+    paddingHorizontal: s(10),
+    paddingVertical: vs(6),
+    borderRadius: radius.pill,
+  },
+  timerText: { color: colors.accent, fontSize: fs(11), fontWeight: '700' },
+  exerciseBlock: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md + 1,
+    padding: 14,
+    marginBottom: vs(14),
+  },
+  exerciseHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: vs(10) },
+  exerciseName: { color: colors.text, fontSize: fs(12.5), fontWeight: '700' },
+  substitutedLabel: { color: colors.textDim, fontSize: fs(10), marginTop: vs(2), fontStyle: 'italic' },
+  menuButton: { paddingHorizontal: s(10), paddingVertical: vs(4) },
+  skippedBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.redGlow,
+    borderRadius: radius.sm,
+    padding: 12,
+  },
+  skippedText: { color: colors.red, fontSize: fs(11), flex: 1 },
+  setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: vs(8), gap: 8 },
+  cardioBlock: { marginTop: vs(4) },
+  cardioTarget: { color: colors.textDim, fontSize: fs(10), marginBottom: vs(10) },
+  cardioRow: { flexDirection: 'row', gap: 10, marginBottom: vs(10) },
+  cardioLabel: { color: colors.textDim2, fontSize: fs(9), marginBottom: vs(4) },
+  intensityRow: { flexDirection: 'row', gap: 6, marginBottom: vs(12) },
+  intensityChip: {
+    paddingHorizontal: s(10),
+    paddingVertical: vs(6),
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  intensityChipActive: { backgroundColor: colors.accentGlow, borderColor: colors.accent },
+  intensityChipText: { color: colors.textDim, fontSize: fs(9.5), textTransform: 'capitalize' },
+  intensityChipTextActive: { color: colors.accent, fontWeight: '700' },
+  cardioDoneButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingVertical: vs(11),
+  },
+  cardioDoneButtonActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  cardioDoneText: { color: colors.textDim, fontSize: fs(11), fontWeight: '600' },
+  cardioDoneTextActive: { color: '#04170F' },
+  setLabel: { color: colors.textDim, width: 56, fontSize: fs(10.5) },
+  setInput: {
+    backgroundColor: colors.surface2,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm - 4,
+    width: 60,
+    textAlign: 'center',
+    paddingVertical: vs(8),
+  },
+  doneButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: colors.border2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 'auto',
+  },
+  doneButtonActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  finishButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    padding: 16,
+    marginTop: vs(8),
+    shadowColor: colors.accentDark,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  finishButtonText: { color: '#04170F', fontWeight: '700', fontSize: fs(14) },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalBox: {
+    backgroundColor: colors.surface2,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 20,
+    maxHeight: '85%',
+  },
+  modalTitle: { color: colors.text, fontSize: fs(14), fontWeight: '700', marginBottom: vs(12) },
+  modalHint: { color: colors.textDim, fontSize: fs(10.5), marginBottom: vs(8) },
+  videoButton: { flexDirection: 'row', alignItems: 'center', marginTop: vs(8) },
+  videoThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  comboBadge: { flexDirection: 'row', alignItems: 'center', marginBottom: vs(8) },
+  comboBadgeText: { color: colors.amber, fontSize: fs(9), fontWeight: '700' },
+  instructionsText: { color: colors.textDim, fontSize: fs(10), lineHeight: 17, marginTop: vs(6) },
+  progressionNote: { color: colors.amber, fontSize: fs(10), fontWeight: '600', marginTop: vs(6) },
+  videoButtonText: { color: colors.accent, fontSize: fs(10), fontWeight: '600', marginLeft: 4 },
+  modalInput: {
+    backgroundColor: colors.surface,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: 12,
+    marginBottom: vs(12),
+    fontSize: fs(12),
+  },
+  modalTextArea: {
+    backgroundColor: colors.surface,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: 12,
+    fontSize: fs(12),
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  modalEmpty: { color: colors.textDim, fontSize: fs(11), paddingVertical: vs(12) },
+  catalogRow: {
+    paddingVertical: vs(12),
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  catalogRowText: { color: colors.text, fontSize: fs(12) },
+  catalogRowGroup: { color: colors.textDim, fontSize: fs(10) },
+  chosenRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.accentGlow,
+    borderRadius: radius.sm,
+    padding: 12,
+    marginBottom: vs(4),
+  },
+  chosenText: { color: colors.text, fontSize: fs(14), fontWeight: '700' },
+  chosenRemove: { color: colors.textDim2, fontSize: fs(14), fontWeight: '600' },
+  chosenDetail: {
+    backgroundColor: colors.surface2,
+    borderRadius: radius.md,
+    padding: 14,
+    marginBottom: vs(12),
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  chosenHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: vs(12),
+  },
+  chosenGroup: {
+    fontSize: fs(10),
+    color: colors.textDim,
+    marginTop: vs(4),
+  },
+  detailLabel: {
+    fontSize: fs(11),
+    fontWeight: '600',
+    color: colors.text,
+    marginTop: vs(12),
+    marginBottom: vs(8),
+  },
+  detailText: {
+    fontSize: fs(10),
+    color: colors.textDim,
+    fontStyle: 'italic',
+    lineHeight: 16,
+  },
+  repsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: vs(12),
+  },
+  repsControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bg,
+    borderRadius: radius.sm,
+    paddingHorizontal: s(0),
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  repsBtn: {
+    fontSize: fs(14),
+    fontWeight: '600',
+    color: colors.accent,
+    paddingHorizontal: s(10),
+    paddingVertical: vs(6),
+  },
+  repsValue: {
+    fontSize: fs(12),
+    fontWeight: '600',
+    color: colors.text,
+    paddingHorizontal: s(8),
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.accent,
+    paddingVertical: vs(6),
+  },
+  repsX: {
+    fontSize: fs(12),
+    color: colors.textDim,
+    marginHorizontal: 12,
+    fontWeight: '600',
+  },
+  instructionsInput: {
+    backgroundColor: colors.bg,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: radius.sm,
+    padding: 10,
+    fontSize: fs(10),
+    minHeight: 50,
+    maxHeight: 80,
+    textAlignVertical: 'top',
+    marginBottom: vs(12),
+  },
+  videoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: radius.sm,
+    paddingVertical: vs(12),
+  },
+  modalConfirm: { backgroundColor: colors.accent, borderRadius: radius.sm, padding: 14, alignItems: 'center', marginTop: vs(14) },
+  modalConfirmText: { color: '#04170F', fontWeight: '700', fontSize: fs(13) },
+  modalClose: { marginTop: vs(10), alignItems: 'center', paddingVertical: vs(8) },
+  modalCloseText: { color: colors.textDim, fontSize: fs(12) },
+});
