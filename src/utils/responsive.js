@@ -20,7 +20,7 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 // Janela larga no navegador = layout de desktop (menu lateral + conteúdo maior).
 export const DESKTOP_BREAKPOINT = 900;
 export const isDesktopWeb = Platform.OS === 'web' && SCREEN_W >= DESKTOP_BREAKPOINT;
-export const APP_MAX_WIDTH = isDesktopWeb ? 1180 : 520; // largura máx. do app no navegador
+export const APP_MAX_WIDTH = isDesktopWeb ? 100000 : 520; // desktop: ocupa a janela toda; celular/tablet: coluna de 520px
 export const SIDEBAR_WIDTH = 230;                       // menu lateral no desktop
 
 /** Largura útil do conteúdo (descontando o menu lateral no desktop). */
