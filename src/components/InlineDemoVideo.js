@@ -13,7 +13,7 @@ import { colors, radius } from '../theme/theme';
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 const MAX_VIDEO_HEIGHT = SCREEN_H * 0.22;
 // Largura máxima do player: 60% da largura da tela, centralizado (era 78%)
-const MAX_VIDEO_WIDTH = SCREEN_W * 0.6;
+const MAX_VIDEO_WIDTH = Math.min(SCREEN_W, 520) * 0.6;
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);

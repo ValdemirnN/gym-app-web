@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 
 import { colors } from '../theme/theme';
-import { s, vs, fs, isSmallDevice } from '../utils/responsive';
+import { s, vs, fs, isSmallDevice, isDesktopWeb, SIDEBAR_WIDTH } from '../utils/responsive';
 import { useAuth } from '../context/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
@@ -84,15 +84,38 @@ function useTabScreenOptions() {
   // Altura base responsiva: menor em telas compactas, maior em telas grandes
   const tabBarBase = vs(isSmallDevice ? 52 : 58);
 
+  // Desktop (navegador): barra de abas vira menu lateral à esquerda
+  if (isDesktopWeb) {
+    return {
+      headerShown: false,
+      tabBarPosition: 'left',
+      tabBarVariant: 'material',
+      tabBarLabelPosition: 'beside-icon',
+      tabBarStyle: {
+        width: SIDEBAR_WIDTH,
+        minWidth: SIDEBAR_WIDTH,
+        maxWidth: SIDEBAR_WIDTH,
+        backgroundColor: colors.surface3,
+        borderRightColor: colors.border2,
+        borderRightWidth: 1,
+        paddingTop: 24,
+        paddingHorizontal: 8,
+      },
+      tabBarActiveTintColor: colors.accent,
+      tabBarInactiveTintColor: colors.textDim,
+      tabBarLabelStyle: { fontSize: 15, fontWeight: '600', marginLeft: 8 },
+    };
+  }
+
   return {
     headerShown: false,
     tabBarStyle: {
       backgroundColor: colors.surface3,
       borderTopColor: colors.border2,
       borderTopWidth: 1,
-      height: tabBarBase + bottomInset,
-      paddingTop: vs(isSmallDevice ? 6 : 8),
-      paddingBottom: bottomInset > 0 ? bottomInset : vs(isSmallDevice ? 5 : 7),
+      height: tabBarBase + bottomInset + (Platform.OS === 'web' ? 14 : 0),
+      paddingTop: Platform.OS === 'web' ? 4 : vs(isSmallDevice ? 6 : 8),
+      paddingBottom: (bottomInset > 0 ? bottomInset : vs(isSmallDevice ? 5 : 7)) + (Platform.OS === 'web' ? 14 : 0),
     },
     tabBarActiveTintColor: colors.accent,
     tabBarInactiveTintColor: colors.textDim,

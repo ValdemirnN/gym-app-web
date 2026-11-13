@@ -43,3 +43,7 @@ npx expo export -p web   # gera a pasta dist (igual ao que a Vercel faz)
 - Notificações push: só no app nativo. Na web não chegam avisos com o app fechado (as notificações dentro do app continuam funcionando).
 - Layout é o de celular; não há layout específico de desktop.
 - Itens a validar manualmente com login real: upload de vídeo grande, gráficos de evolução, chat.
+
+## Layout no computador
+Em janelas com 900px ou mais, o app usa menu lateral à esquerda, fontes/espaços maiores e área de conteúdo mais larga
+(`src/utils/responsive.js` → `isDesktopWeb`, `APP_MAX_WIDTH`, `SIDEBAR_WIDTH`). Abaixo disso, mantém o layout de celular.

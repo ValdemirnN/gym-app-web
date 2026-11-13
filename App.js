@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Text, TextInput, View, Platform } from 'react-native';
 import './src/web/alertShim';
+import { APP_MAX_WIDTH, isDesktopWeb } from './src/utils/responsive';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 // ─── Bloquear fontScale do sistema ───────────────────────────────────────────
@@ -48,11 +49,22 @@ export default function App() {
     </SafeAreaProvider>
   );
 
-  // No navegador (PC): mantém o layout de celular, centralizado na tela.
+  // No navegador: celular = coluna única; PC = menu lateral + conteúdo, centralizado.
   if (Platform.OS === 'web') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center' }}>
-        <View style={{ flex: 1, width: '100%', maxWidth: 520, overflow: 'hidden' }}>{content}</View>
+      <View style={{ flex: 1, backgroundColor: isDesktopWeb ? '#05070A' : '#000', alignItems: 'center' }}>
+        <View
+          style={{
+            flex: 1,
+            width: '100%',
+            maxWidth: APP_MAX_WIDTH,
+            overflow: 'hidden',
+            backgroundColor: '#0B0F14',
+            ...(isDesktopWeb ? { borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#1F2937' } : null),
+          }}
+        >
+          {content}
+        </View>
       </View>
     );
   }
