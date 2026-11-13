@@ -1,0 +1,111 @@
+/**
+ * responsive.js
+ * Sistema de responsividade centralizado.
+ *
+ * BASE de referência: 360×800dp — tamanho do celular que ficou com visual perfeito.
+ * Telas maiores crescem levemente mas com teto (clamp) para manter proporções visuais.
+ */
+
+import { Dimensions, PixelRatio, Platform, useWindowDimensions } from 'react-native';
+
+// ─── Base de referência ───────────────────────────────────────────────────────
+// 360px = celular Galaxy A/S FE — tamanho de referência visual aprovado
+const BASE_WIDTH  = 360;
+const BASE_HEIGHT = 800;
+
+// ─── Tamanho real da janela ───────────────────────────────────────────────────
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+// ─── Navegador no computador ──────────────────────────────────────────────────
+// Janela larga no navegador = layout de desktop (menu lateral + conteúdo maior).
+export const DESKTOP_BREAKPOINT = 900;
+export const isDesktopWeb = Platform.OS === 'web' && SCREEN_W >= DESKTOP_BREAKPOINT;
+export const APP_MAX_WIDTH = isDesktopWeb ? 100000 : 520; // desktop: ocupa a janela toda; celular/tablet: coluna de 520px
+export const SIDEBAR_WIDTH = 230;                       // menu lateral no desktop
+
+/** Largura útil do conteúdo (descontando o menu lateral no desktop). */
+export function useAppWidth() {
+  const { width } = useWindowDimensions();
+  if (Platform.OS !== 'web') return width;
+  return Math.min(width, APP_MAX_WIDTH) - (isDesktopWeb ? SIDEBAR_WIDTH : 0);
+}
+
+// ─── Escala base (sem clamp) ──────────────────────────────────────────────────
+const rawScaleX = SCREEN_W / BASE_WIDTH;
+const rawScaleY = SCREEN_H / BASE_HEIGHT;
+
+// ─── Escala com teto: no máximo 12% maior que a base ─────────────────────────
+// Isso evita que telas muito largas (412px+) inflem fontes e ícones demais.
+// Telas menores que a base ainda encolhem normalmente.
+const scaleX = isDesktopWeb ? 1.25 : Math.min(rawScaleX, 1.12);
+const scaleY = isDesktopWeb ? 1.2 : Math.min(rawScaleY, 1.15);
+
+/**
+ * s(n) — escala horizontal com teto.
+ * Use para: larguras, padding lateral, tamanho de ícones, avatares.
+ */
+export const s = (size) =>
+  Math.round(PixelRatio.roundToNearestPixel(size * scaleX));
+
+/**
+ * vs(n) — escala vertical com teto.
+ * Use para: alturas, padding top/bottom, margens verticais.
+ */
+export const vs = (size) =>
+  Math.round(PixelRatio.roundToNearestPixel(size * scaleY));
+
+/**
+ * ms(n, factor) — escala moderada.
+ * factor 0 = tamanho fixo, 1 = totalmente proporcional.
+ * Padrão 0.3 para um crescimento bem sutil.
+ */
+export const ms = (size, factor = 0.3) =>
+  Math.round(PixelRatio.roundToNearestPixel(size + (s(size) - size) * factor));
+
+/**
+ * FONT_SCALE — fator global aplicado a TODAS as fontes do app.
+ * Reduza este valor para diminuir todas as letras do app de uma vez,
+ * sem precisar editar tela por tela (fs() é usado em quase toda fonte do app).
+ * 1.0 = tamanho original. 0.85 = 15% menor em todo o app.
+ */
+const FONT_SCALE = isDesktopWeb ? 1.05 : 0.85;
+
+/**
+ * fs(n) — escala de fontes.
+ * Fator 0.15: fontes quase não crescem em telas maiores.
+ * Ex: fs(14) → 14px em 360px, ~14-15px em 412px.
+ * Mínimo de 9 para nunca deixar texto ilegível.
+ * Aplica FONT_SCALE por cima da escala responsiva normal.
+ */
+export const fs = (size) => Math.max(9, ms(size, 0.15) * FONT_SCALE);
+
+// ─── Informações do dispositivo ───────────────────────────────────────────────
+export const screenWidth  = SCREEN_W;
+export const screenHeight = SCREEN_H;
+
+/** Telas compactas: abaixo de 360dp */
+export const isSmallDevice = SCREEN_W < 360;
+
+/** Telas grandes: acima de 410dp (Galaxy S22+, Pixel 7, etc.) */
+export const isLargeDevice = SCREEN_W > 410;
+
+export const isIOS = Platform.OS === 'ios';
+
+/**
+ * Altura da tab bar responsiva.
+ */
+export function tabBarHeight(bottomInset = 0) {
+  const base = isIOS ? (bottomInset > 0 ? 50 : 56) : 56;
+  return vs(base) + (bottomInset > 0 ? bottomInset : 0);
+}
+
+/**
+ * Padding top padrão de tela.
+ * Em telas compactas reduz um pouco para não desperdiçar espaço.
+ */
+export const screenPaddingTop = vs(isSmallDevice ? 42 : 52);
+
+/**
+ * Padding horizontal padrão de tela.
+ */
+export const screenPaddingH = s(isSmallDevice ? 14 : 18);
