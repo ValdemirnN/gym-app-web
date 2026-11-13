@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, View, ActivityIndicator, TouchableOpacity, StyleSheet, Platform } from 'react-native';
@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 
 import { colors } from '../theme/theme';
 import { s, vs, fs, isSmallDevice, isDesktopWeb, SIDEBAR_WIDTH } from '../utils/responsive';
+import { stackScreenOptions, centerScreen, DesktopSidebar } from './desktop';
 import { useAuth } from '../context/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
@@ -77,6 +78,9 @@ const Tab = createBottomTabNavigator();
 const PersonalTab = createBottomTabNavigator();
 const AdminTab = createBottomTabNavigator();
 
+// No desktop, o navegador de abas usa o menu lateral próprio (com botão Sair)
+const sidebarRenderer = isDesktopWeb ? (props) => <DesktopSidebar {...props} /> : undefined;
+
 function useTabScreenOptions() {
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom;
@@ -86,25 +90,7 @@ function useTabScreenOptions() {
 
   // Desktop (navegador): barra de abas vira menu lateral à esquerda
   if (isDesktopWeb) {
-    return {
-      headerShown: false,
-      tabBarPosition: 'left',
-      tabBarVariant: 'material',
-      tabBarLabelPosition: 'beside-icon',
-      tabBarStyle: {
-        width: SIDEBAR_WIDTH,
-        minWidth: SIDEBAR_WIDTH,
-        maxWidth: SIDEBAR_WIDTH,
-        backgroundColor: colors.surface3,
-        borderRightColor: colors.border2,
-        borderRightWidth: 1,
-        paddingTop: 24,
-        paddingHorizontal: 8,
-      },
-      tabBarActiveTintColor: colors.accent,
-      tabBarInactiveTintColor: colors.textDim,
-      tabBarLabelStyle: { fontSize: 15, fontWeight: '600', marginLeft: 8 },
-    };
+    return { headerShown: false, tabBarPosition: 'left' };
   }
 
   return {
@@ -137,10 +123,10 @@ function resetToRootOnTabPress(rootScreenName) {
 
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Login" component={LoginScreen} />
-      <AuthStack.Screen name="Signup" component={SignupScreen} />
-      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    <AuthStack.Navigator screenOptions={stackScreenOptions}>
+      <AuthStack.Screen name="Login" component={centerScreen(LoginScreen, "Login")} />
+      <AuthStack.Screen name="Signup" component={centerScreen(SignupScreen, "Signup")} />
+      <AuthStack.Screen name="ForgotPassword" component={centerScreen(ForgotPasswordScreen, "ForgotPassword")} />
     </AuthStack.Navigator>
   );
 }
@@ -149,46 +135,46 @@ function AuthNavigator() {
 
 function HomeStack() {
   return (
-    <RootStack.Navigator screenOptions={{ headerShown: false }}>
-      <RootStack.Screen name="HomeMain" component={HomeScreen} />
-      <RootStack.Screen name="TalkToPersonal" component={TalkToPersonalScreen} />
-      <RootStack.Screen name="Chat" component={ChatScreen} />
+    <RootStack.Navigator screenOptions={stackScreenOptions}>
+      <RootStack.Screen name="HomeMain" component={centerScreen(HomeScreen, "HomeMain")} />
+      <RootStack.Screen name="TalkToPersonal" component={centerScreen(TalkToPersonalScreen, "TalkToPersonal")} />
+      <RootStack.Screen name="Chat" component={centerScreen(ChatScreen, "Chat")} />
       {/* <<<--- 3. TELA DE NOTIFICAÇÕES DO ALUNO --->>> */}
-      <RootStack.Screen name="NotificationsScreen" component={NotificationsScreen} />
-      <RootStack.Screen name="StudentChallenge" component={StudentChallengeScreen} />
-      <RootStack.Screen name="Faq" component={FaqScreen} />
-      <RootStack.Screen name="Parq" component={ParqScreen} />
-      <RootStack.Screen name="Faturas" component={StudentOwnSubscriptionScreen} />
+      <RootStack.Screen name="NotificationsScreen" component={centerScreen(NotificationsScreen, "NotificationsScreen")} />
+      <RootStack.Screen name="StudentChallenge" component={centerScreen(StudentChallengeScreen, "StudentChallenge")} />
+      <RootStack.Screen name="Faq" component={centerScreen(FaqScreen, "Faq")} />
+      <RootStack.Screen name="Parq" component={centerScreen(ParqScreen, "Parq")} />
+      <RootStack.Screen name="Faturas" component={centerScreen(StudentOwnSubscriptionScreen, "Faturas")} />
       {/* <<<--- NOVA TELA: Evolução/Dashboard do Aluno --->>> */}
-      <RootStack.Screen name="StudentEvolution" component={StudentEvolutionScreen} />
+      <RootStack.Screen name="StudentEvolution" component={centerScreen(StudentEvolutionScreen, "StudentEvolution")} />
       {/* <<<--- Histórico de Feedbacks acessível da Home --->>> */}
-      <RootStack.Screen name="WorkoutFeedbackHistory" component={WorkoutFeedbackHistoryScreen} />
+      <RootStack.Screen name="WorkoutFeedbackHistory" component={centerScreen(WorkoutFeedbackHistoryScreen, "WorkoutFeedbackHistory")} />
     </RootStack.Navigator>
   );
 }
 
 function WorkoutsStack() {
   return (
-    <RootStack.Navigator screenOptions={{ headerShown: false }}>
-      <RootStack.Screen name="WorkoutsList" component={WorkoutsScreen} />
-      <RootStack.Screen name="BlockDays" component={BlockDaysScreen} />
-      <RootStack.Screen name="CreateWorkout" component={CreateWorkoutScreen} />
-      <RootStack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} />
-      <RootStack.Screen name="ActiveWorkout" component={ActiveWorkoutScreen} />
-      <RootStack.Screen name="WorkoutSummary" component={WorkoutSummaryScreen} />
-      <RootStack.Screen name="UploadVideo" component={UploadVideoScreen} />
-      <RootStack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
+    <RootStack.Navigator screenOptions={stackScreenOptions}>
+      <RootStack.Screen name="WorkoutsList" component={centerScreen(WorkoutsScreen, "WorkoutsList")} />
+      <RootStack.Screen name="BlockDays" component={centerScreen(BlockDaysScreen, "BlockDays")} />
+      <RootStack.Screen name="CreateWorkout" component={centerScreen(CreateWorkoutScreen, "CreateWorkout")} />
+      <RootStack.Screen name="WorkoutDetail" component={centerScreen(WorkoutDetailScreen, "WorkoutDetail")} />
+      <RootStack.Screen name="ActiveWorkout" component={centerScreen(ActiveWorkoutScreen, "ActiveWorkout")} />
+      <RootStack.Screen name="WorkoutSummary" component={centerScreen(WorkoutSummaryScreen, "WorkoutSummary")} />
+      <RootStack.Screen name="UploadVideo" component={centerScreen(UploadVideoScreen, "UploadVideo")} />
+      <RootStack.Screen name="VideoPlayer" component={centerScreen(VideoPlayerScreen, "VideoPlayer")} />
       {/* <<<--- Histórico de Feedbacks do aluno --->>> */}
-      <RootStack.Screen name="WorkoutFeedbackHistory" component={WorkoutFeedbackHistoryScreen} />
+      <RootStack.Screen name="WorkoutFeedbackHistory" component={centerScreen(WorkoutFeedbackHistoryScreen, "WorkoutFeedbackHistory")} />
     </RootStack.Navigator>
   );
 }
 
 function ClientChatStack() {
   return (
-    <ClientChatStackNav.Navigator screenOptions={{ headerShown: false }}>
-      <ClientChatStackNav.Screen name="ChatList" component={ClientChatListScreen} />
-      <ClientChatStackNav.Screen name="ChatConversation" component={ChatScreen} />
+    <ClientChatStackNav.Navigator screenOptions={stackScreenOptions}>
+      <ClientChatStackNav.Screen name="ChatList" component={centerScreen(ClientChatListScreen, "ChatList")} />
+      <ClientChatStackNav.Screen name="ChatConversation" component={centerScreen(ChatScreen, "ChatConversation")} />
     </ClientChatStackNav.Navigator>
   );
 }
@@ -196,7 +182,7 @@ function ClientChatStack() {
 function MainTabs() {
   const tabOptions = useTabScreenOptions();
   return (
-    <Tab.Navigator screenOptions={tabOptions}>
+    <Tab.Navigator screenOptions={tabOptions} tabBar={sidebarRenderer}>
       <Tab.Screen
         name="Home"
         component={HomeStack}
@@ -217,7 +203,7 @@ function MainTabs() {
       />
       <Tab.Screen
         name="Profile"
-        component={ProfileScreen}
+        component={centerScreen(ProfileScreen, "Profile")}
         options={{ tabBarLabel: 'Perfil', tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} /> }}
       />
     </Tab.Navigator>
@@ -229,43 +215,43 @@ function MainTabs() {
 // <<<--- 4. STACK DO DASHBOARD DO PERSONAL --->>>
 function PersonalHomeStack() {
   return (
-    <PersonalHomeStackNav.Navigator screenOptions={{ headerShown: false }}>
-      <PersonalHomeStackNav.Screen name="PersonalDashboardMain" component={PersonalDashboardScreen} />
-      <PersonalHomeStackNav.Screen name="NotificationsScreen" component={NotificationsScreen} />
-      <PersonalHomeStackNav.Screen name="Challenges" component={ChallengesScreen} />
-      <PersonalHomeStackNav.Screen name="Faq" component={FaqScreen} />
+    <PersonalHomeStackNav.Navigator screenOptions={stackScreenOptions}>
+      <PersonalHomeStackNav.Screen name="PersonalDashboardMain" component={centerScreen(PersonalDashboardScreen, "PersonalDashboardMain")} />
+      <PersonalHomeStackNav.Screen name="NotificationsScreen" component={centerScreen(NotificationsScreen, "NotificationsScreen")} />
+      <PersonalHomeStackNav.Screen name="Challenges" component={centerScreen(ChallengesScreen, "Challenges")} />
+      <PersonalHomeStackNav.Screen name="Faq" component={centerScreen(FaqScreen, "Faq")} />
     </PersonalHomeStackNav.Navigator>
   );
 }
 
 function PersonalStudentsStack() {
   return (
-    <PersonalStack.Navigator screenOptions={{ headerShown: false }}>
-      <PersonalStack.Screen name="StudentsList" component={PersonalStudentsListScreen} />
-      <PersonalStack.Screen name="StudentDetail" component={StudentDetailScreen} />
-      <PersonalStack.Screen name="StudentWorkouts" component={StudentWorkoutsScreen} />
-      <PersonalStack.Screen name="CreateWorkoutForStudent" component={CreateWorkoutForStudentScreen} />
-      <PersonalStack.Screen name="CreateWorkoutGroup" component={CreateWorkoutGroupScreen} />
-      <PersonalStack.Screen name="StudentWorkoutDetail" component={StudentWorkoutDetailScreen} />
-      <PersonalStack.Screen name="StudentHistory" component={StudentHistoryScreen} />
-      <PersonalStack.Screen name="StudentEvaluations" component={StudentEvaluationsScreen} />
-      <PersonalStack.Screen name="StudentParqView" component={StudentParqViewScreen} />
-      <PersonalStack.Screen name="StudentWorkoutLogDetail" component={StudentWorkoutLogDetailScreen} />
-      <PersonalStack.Screen name="StudentChat" component={ChatScreen} />
-      <PersonalStack.Screen name="StudentHealth" component={StudentHealthScreen} />
-      <PersonalStack.Screen name="StudentRegistration" component={StudentRegistrationScreen} />
-      <PersonalStack.Screen name="StudentSubscription" component={StudentSubscriptionScreen} />
-      <PersonalStack.Screen name="UploadVideo" component={UploadVideoScreen} />
-      <PersonalStack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
+    <PersonalStack.Navigator screenOptions={stackScreenOptions}>
+      <PersonalStack.Screen name="StudentsList" component={centerScreen(PersonalStudentsListScreen, "StudentsList")} />
+      <PersonalStack.Screen name="StudentDetail" component={centerScreen(StudentDetailScreen, "StudentDetail")} />
+      <PersonalStack.Screen name="StudentWorkouts" component={centerScreen(StudentWorkoutsScreen, "StudentWorkouts")} />
+      <PersonalStack.Screen name="CreateWorkoutForStudent" component={centerScreen(CreateWorkoutForStudentScreen, "CreateWorkoutForStudent")} />
+      <PersonalStack.Screen name="CreateWorkoutGroup" component={centerScreen(CreateWorkoutGroupScreen, "CreateWorkoutGroup")} />
+      <PersonalStack.Screen name="StudentWorkoutDetail" component={centerScreen(StudentWorkoutDetailScreen, "StudentWorkoutDetail")} />
+      <PersonalStack.Screen name="StudentHistory" component={centerScreen(StudentHistoryScreen, "StudentHistory")} />
+      <PersonalStack.Screen name="StudentEvaluations" component={centerScreen(StudentEvaluationsScreen, "StudentEvaluations")} />
+      <PersonalStack.Screen name="StudentParqView" component={centerScreen(StudentParqViewScreen, "StudentParqView")} />
+      <PersonalStack.Screen name="StudentWorkoutLogDetail" component={centerScreen(StudentWorkoutLogDetailScreen, "StudentWorkoutLogDetail")} />
+      <PersonalStack.Screen name="StudentChat" component={centerScreen(ChatScreen, "StudentChat")} />
+      <PersonalStack.Screen name="StudentHealth" component={centerScreen(StudentHealthScreen, "StudentHealth")} />
+      <PersonalStack.Screen name="StudentRegistration" component={centerScreen(StudentRegistrationScreen, "StudentRegistration")} />
+      <PersonalStack.Screen name="StudentSubscription" component={centerScreen(StudentSubscriptionScreen, "StudentSubscription")} />
+      <PersonalStack.Screen name="UploadVideo" component={centerScreen(UploadVideoScreen, "UploadVideo")} />
+      <PersonalStack.Screen name="VideoPlayer" component={centerScreen(VideoPlayerScreen, "VideoPlayer")} />
     </PersonalStack.Navigator>
   );
 }
 
 function PersonalChatStack() {
   return (
-    <PersonalChatStackNav.Navigator screenOptions={{ headerShown: false }}>
-      <PersonalChatStackNav.Screen name="ChatList" component={PersonalChatListScreen} />
-      <PersonalChatStackNav.Screen name="ChatConversation" component={ChatScreen} />
+    <PersonalChatStackNav.Navigator screenOptions={stackScreenOptions}>
+      <PersonalChatStackNav.Screen name="ChatList" component={centerScreen(PersonalChatListScreen, "ChatList")} />
+      <PersonalChatStackNav.Screen name="ChatConversation" component={centerScreen(ChatScreen, "ChatConversation")} />
     </PersonalChatStackNav.Navigator>
   );
 }
@@ -273,7 +259,7 @@ function PersonalChatStack() {
 function PersonalTabs() {
   const tabOptions = useTabScreenOptions();
   return (
-    <PersonalTab.Navigator screenOptions={tabOptions}>
+    <PersonalTab.Navigator screenOptions={tabOptions} tabBar={sidebarRenderer}>
       <PersonalTab.Screen
         name="PersonalDashboard"
         component={PersonalHomeStack} // <<<--- 5. ALTERADO DE PersonalDashboardScreen PARA PersonalHomeStack --->>>
@@ -294,7 +280,7 @@ function PersonalTabs() {
       />
       <PersonalTab.Screen
         name="PersonalProfile"
-        component={PersonalProfileScreen}
+        component={centerScreen(PersonalProfileScreen, "PersonalProfile")}
         options={{ tabBarLabel: 'Perfil', tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} /> }}
       />
     </PersonalTab.Navigator>
@@ -306,20 +292,20 @@ function PersonalTabs() {
 function AdminTabs() {
   const tabOptions = useTabScreenOptions();
   return (
-    <AdminTab.Navigator screenOptions={tabOptions}>
+    <AdminTab.Navigator screenOptions={tabOptions} tabBar={sidebarRenderer}>
       <AdminTab.Screen
         name="AdminDashboard"
-        component={AdminDashboardScreen}
+        component={centerScreen(AdminDashboardScreen, "AdminDashboard")}
         options={{ tabBarLabel: 'Dashboard', tabBarIcon: ({ color }) => <Feather name="grid" size={22} color={color} /> }}
       />
       <AdminTab.Screen
         name="AdminPersonals"
-        component={AdminPersonalsListScreen}
+        component={centerScreen(AdminPersonalsListScreen, "AdminPersonals")}
         options={{ tabBarLabel: 'Personals', tabBarIcon: ({ color }) => <Feather name="briefcase" size={22} color={color} /> }}
       />
       <AdminTab.Screen
         name="AdminProfile"
-        component={AdminProfileScreen}
+        component={centerScreen(AdminProfileScreen, "AdminProfile")}
         options={{ tabBarLabel: 'Perfil', tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} /> }}
       />
     </AdminTab.Navigator>
@@ -360,6 +346,9 @@ const loadingStyles = StyleSheet.create({
   buttonText: { color: '#111827', fontWeight: 'bold' },
 });
 
+// Fundo escuro por trás das telas (aparece nas laterais quando o conteúdo é centralizado)
+const navTheme = { ...DarkTheme, colors: { ...DarkTheme.colors, background: colors.bg, card: colors.surface, border: colors.border2 } };
+
 export default function AppNavigator() {
   const { session, profile, loading, isPasswordRecovery } = useAuth();
 
@@ -383,5 +372,5 @@ export default function AppNavigator() {
     content = <MainTabs />;
   }
 
-  return <NavigationContainer>{content}</NavigationContainer>;
+  return <NavigationContainer theme={navTheme}>{content}</NavigationContainer>;
 }
