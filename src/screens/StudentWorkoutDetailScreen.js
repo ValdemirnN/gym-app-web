@@ -19,7 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { colors, radius } from '../theme/theme';
-import { s, vs, ms, fs, isSmallDevice, screenPaddingH, screenPaddingTop } from '../utils/responsive';
+import { s, vs, ms, fs, isSmallDevice, screenPaddingH, screenPaddingTop, useAppWidth } from '../utils/responsive';
 import InlineDemoVideo from '../components/InlineDemoVideo';
 import WarmupExerciseList from '../components/WarmupExerciseList';
 import CardioExerciseList from '../components/CardioExerciseList';
@@ -200,7 +200,7 @@ export default function StudentWorkoutDetailScreen({ route, navigation }) {
     ]);
   };
 
-  const { width: windowWidth } = useWindowDimensions();
+  const windowWidth = useAppWidth();
   // largura do conteúdo dentro do card: tela - padding do container (20*2) - padding da área expandida (14*2)
   const pageWidth = windowWidth - 68;
 

@@ -43,7 +43,7 @@ import { insertRow, updateRow } from '../lib/dataClient';
 import { generateUUID } from '../utils/uuid';
 import { useAuth } from '../context/AuthContext';
 import { colors, radius } from '../theme/theme';
-import { s, vs, ms, fs, screenPaddingTop } from '../utils/responsive';
+import { s, vs, ms, fs, screenPaddingTop, useAppWidth } from '../utils/responsive';
 import InlineDemoVideo from '../components/InlineDemoVideo';
 import WarmupExerciseList from '../components/WarmupExerciseList';
 import CardioExerciseList from '../components/CardioExerciseList';
@@ -94,7 +94,7 @@ export default function StudentWorkoutViewScreen({ route, navigation }) {
   const [expandedId, setExpandedId] = useState(null);
   const [substitutePage, setSubstitutePage] = useState({});
   const [starting, setStarting] = useState(false);
-  const { width: windowWidth } = useWindowDimensions();
+  const windowWidth = useAppWidth();
 
   // ── Estado do treino ativo ─────────────────────────────────────────────────
   const [isWorkoutActive, setIsWorkoutActive] = useState(false);

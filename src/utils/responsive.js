@@ -6,7 +6,7 @@
  * Telas maiores crescem levemente mas com teto (clamp) para manter proporções visuais.
  */
 
-import { Dimensions, PixelRatio, Platform } from 'react-native';
+import { Dimensions, PixelRatio, Platform, useWindowDimensions } from 'react-native';
 
 // ─── Base de referência ───────────────────────────────────────────────────────
 // 360px = celular Galaxy A/S FE — tamanho de referência visual aprovado
@@ -16,6 +16,20 @@ const BASE_HEIGHT = 800;
 // ─── Tamanho real da janela ───────────────────────────────────────────────────
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
+// ─── Navegador no computador ──────────────────────────────────────────────────
+// Janela larga no navegador = layout de desktop (menu lateral + conteúdo maior).
+export const DESKTOP_BREAKPOINT = 900;
+export const isDesktopWeb = Platform.OS === 'web' && SCREEN_W >= DESKTOP_BREAKPOINT;
+export const APP_MAX_WIDTH = isDesktopWeb ? 1180 : 520; // largura máx. do app no navegador
+export const SIDEBAR_WIDTH = 230;                       // menu lateral no desktop
+
+/** Largura útil do conteúdo (descontando o menu lateral no desktop). */
+export function useAppWidth() {
+  const { width } = useWindowDimensions();
+  if (Platform.OS !== 'web') return width;
+  return Math.min(width, APP_MAX_WIDTH) - (isDesktopWeb ? SIDEBAR_WIDTH : 0);
+}
+
 // ─── Escala base (sem clamp) ──────────────────────────────────────────────────
 const rawScaleX = SCREEN_W / BASE_WIDTH;
 const rawScaleY = SCREEN_H / BASE_HEIGHT;
@@ -23,8 +37,8 @@ const rawScaleY = SCREEN_H / BASE_HEIGHT;
 // ─── Escala com teto: no máximo 12% maior que a base ─────────────────────────
 // Isso evita que telas muito largas (412px+) inflem fontes e ícones demais.
 // Telas menores que a base ainda encolhem normalmente.
-const scaleX = Math.min(rawScaleX, 1.12);
-const scaleY = Math.min(rawScaleY, 1.15);
+const scaleX = isDesktopWeb ? 1.25 : Math.min(rawScaleX, 1.12);
+const scaleY = isDesktopWeb ? 1.2 : Math.min(rawScaleY, 1.15);
 
 /**
  * s(n) — escala horizontal com teto.
@@ -54,7 +68,7 @@ export const ms = (size, factor = 0.3) =>
  * sem precisar editar tela por tela (fs() é usado em quase toda fonte do app).
  * 1.0 = tamanho original. 0.85 = 15% menor em todo o app.
  */
-const FONT_SCALE = 0.85;
+const FONT_SCALE = isDesktopWeb ? 1.05 : 0.85;
 
 /**
  * fs(n) — escala de fontes.
