@@ -47,3 +47,8 @@ npx expo export -p web   # gera a pasta dist (igual ao que a Vercel faz)
 ## Layout no computador
 Em janelas com 900px ou mais, o app usa menu lateral à esquerda, fontes/espaços maiores e área de conteúdo mais larga
 (`src/utils/responsive.js` → `isDesktopWeb`, `APP_MAX_WIDTH`, `SIDEBAR_WIDTH`). Abaixo disso, mantém o layout de celular.
+
+### Menu lateral e largura das telas (desktop)
+`src/navigation/desktop.js`: menu lateral (marca, navegação, usuário e botão **Sair**) e centralização do conteúdo.
+Larguras máximas: login/cadastro 460px, formulários e perfis 860px, dashboards e listas 1240px
+(ajuste as listas `NARROW_SCREENS` / `MEDIUM_SCREENS` e as constantes no topo desse arquivo).

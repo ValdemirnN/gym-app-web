@@ -52,14 +52,14 @@ export default function App() {
   // No navegador: celular = coluna única; PC = menu lateral + conteúdo, centralizado.
   if (Platform.OS === 'web') {
     return (
-      <View style={{ flex: 1, backgroundColor: isDesktopWeb ? '#05070A' : '#000', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: '#0A0C10', alignItems: 'center' }}>
         <View
           style={{
             flex: 1,
             width: '100%',
             maxWidth: APP_MAX_WIDTH,
             overflow: 'hidden',
-            backgroundColor: '#0B0F14',
+            backgroundColor: '#0A0C10',
           }}
         >
           {content}
