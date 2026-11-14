@@ -23,6 +23,7 @@ import ActiveWorkoutScreen from '../screens/ActiveWorkoutScreen';
 import UploadVideoScreen from '../screens/UploadVideoScreen';
 import VideoPlayerScreen from '../screens/VideoPlayerScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import AccessBlockedScreen from '../screens/AccessBlockedScreen';
 import ClientChatListScreen from '../screens/ClientChatListScreen';
 import TalkToPersonalScreen from '../screens/TalkToPersonalScreen';
 import ChatScreen from '../screens/ChatScreen';
@@ -350,7 +351,7 @@ const loadingStyles = StyleSheet.create({
 const navTheme = { ...DarkTheme, colors: { ...DarkTheme.colors, background: colors.bg, card: colors.surface, border: colors.border2 } };
 
 export default function AppNavigator() {
-  const { session, profile, loading, isPasswordRecovery } = useAuth();
+  const { session, profile, loading, isPasswordRecovery, accessBlock } = useAuth();
 
   let content;
 
@@ -364,6 +365,10 @@ export default function AppNavigator() {
     content = <ProfileErrorScreen />;
   } else if (profile.status === 'pendente') {
     content = <PendingApprovalScreen />;
+  } else if (accessBlock) {
+    // Prazo de pagamento vencido (ou bloqueio manual) sem confirmação:
+    // personal e aluno só enxergam a tela de bloqueio + faturas.
+    content = <AccessBlockedScreen />;
   } else if (profile.role === 'admin') {
     content = <AdminTabs />;
   } else if (profile.role === 'personal') {

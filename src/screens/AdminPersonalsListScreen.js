@@ -17,7 +17,18 @@ const STATUS_META = {
   suspenso:  { label: 'Suspenso',   color: '#FF8C42',     bg: 'rgba(255,140,66,0.14)' },
 };
 
+const PAGAMENTO = '__pagamento';
 const FILTER_TABS = ['todos','pendente','aprovado','suspenso','recusado'];
+
+// ─── vencimento da mensalidade do personal ───────────────────
+function paymentInfo(p) {
+  if (!p.subscription_expires_at) return { text: 'Sem vencimento definido', color: colors.textDim, late: false };
+  const d = new Date(p.subscription_expires_at);
+  const label = d.toLocaleDateString('pt-BR');
+  if (p.subscription_status === 'bloqueado') return { text: 'Bloqueado manualmente', color: colors.red, late: true };
+  if (d < new Date()) return { text: `Vencido em ${label} — sem pagamento confirmado`, color: colors.red, late: true };
+  return { text: `Mensalidade em dia · vence em ${label}`, color: colors.accent, late: false };
+}
 
 // ─── badge ───────────────────────────────────────────────────
 function Badge({ status }) {
@@ -41,7 +52,7 @@ function Detail({ icon, value }) {
 }
 
 // ─── modal de ação ───────────────────────────────────────────
-function ActionModal({ visible, personal, onClose, onConfirm }) {
+function ActionModal({ visible, personal, onClose, onConfirm, onConfirmPayment }) {
   const [reason, setReason] = useState('');
   const [targetStatus, setTargetStatus] = useState(null);
 
@@ -50,6 +61,7 @@ function ActionModal({ visible, personal, onClose, onConfirm }) {
     const list = [];
     if (s === 'pendente')  list.push({ status:'aprovado', label:'Aprovar',   icon:'check-circle', color:colors.accent });
     if (s === 'pendente')  list.push({ status:'recusado', label:'Recusar',   icon:'x-circle',     color:colors.red   });
+    if (s === 'aprovado')  list.push({ status:PAGAMENTO, label:'Confirmar pagamento (+1 mês)', icon:'dollar-sign', color:colors.accent });
     if (s === 'aprovado')  list.push({ status:'suspenso', label:'Suspender', icon:'pause-circle',  color:'#FF8C42'   });
     if (s === 'suspenso')  list.push({ status:'aprovado', label:'Reativar',  icon:'check-circle', color:colors.accent });
     if (s === 'recusado')  list.push({ status:'aprovado', label:'Aprovar mesmo assim', icon:'check-circle', color:colors.accent });
@@ -66,7 +78,11 @@ function ActionModal({ visible, personal, onClose, onConfirm }) {
       Alert.alert('Motivo obrigatório', 'Informe um motivo para recusa ou suspensão.');
       return;
     }
-    onConfirm(personal, targetStatus, reason.trim() || null);
+    if (targetStatus === PAGAMENTO) {
+      onConfirmPayment(personal);
+    } else {
+      onConfirm(personal, targetStatus, reason.trim() || null);
+    }
     setTargetStatus(null);
     setReason('');
   };
@@ -93,6 +109,9 @@ function ActionModal({ visible, personal, onClose, onConfirm }) {
             <Text style={styles.modalCref}>CREF {personal.cref_number}{personal.cref_state ? `/${personal.cref_state}` : ''}</Text>
           )}
           <Badge status={personal.status} />
+          {personal.status === 'aprovado' && (
+            <Text style={[styles.modalPay, { color: paymentInfo(personal).color }]}>{paymentInfo(personal).text}</Text>
+          )}
 
           {/* campos de perfil */}
           <ScrollView style={{ maxHeight: 120 }} showsVerticalScrollIndicator={false}>
@@ -116,7 +135,8 @@ function ActionModal({ visible, personal, onClose, onConfirm }) {
           ) : (
             <>
               <Text style={styles.modalSectionLabel}>
-                {targetStatus === 'aprovado' ? '✅ Aprovar' :
+                {targetStatus === PAGAMENTO ? '💰 Confirmar pagamento de' :
+                 targetStatus === 'aprovado' ? '✅ Aprovar' :
                  targetStatus === 'recusado' ? '❌ Recusar' :
                  targetStatus === 'suspenso' ? '⏸ Suspender' : '↩ Reativar'} "{personal.name}"?
               </Text>
@@ -164,7 +184,7 @@ export default function AdminPersonalsListScreen() {
     setLoading(true);
     const { data } = await supabase
       .from('profiles')
-      .select('id, name, email, status, pix_key, whatsapp, cref_number, cref_state, bio, instagram_url, created_at, approved_at')
+      .select('id, name, email, status, pix_key, whatsapp, cref_number, cref_state, bio, instagram_url, created_at, approved_at, subscription_expires_at, subscription_status, subscription_price')
       .eq('role', 'personal')
       .order('created_at', { ascending: false });
 
@@ -220,6 +240,19 @@ export default function AdminPersonalsListScreen() {
       // fallback se a RPC ainda não existir (rode o schema_v25 primeiro)
       await supabase.from('profiles').update({ status: newStatus }).eq('id', personal.id);
     }
+    await load();
+  };
+
+  const handleConfirmPayment = async (personal) => {
+    setModalVisible(false);
+    const { data, error } = await supabase.rpc('admin_confirm_personal_payment', {
+      p_personal_id: personal.id,
+    });
+    if (error) {
+      Alert.alert('Erro ao confirmar pagamento', error.message + '\n\nRode o supabase/schema_v33_payment_block.sql se ainda não rodou.');
+      return;
+    }
+    Alert.alert('Pagamento confirmado', `Acesso liberado até ${new Date(data).toLocaleDateString('pt-BR')}.`);
     await load();
   };
 
@@ -305,6 +338,14 @@ export default function AdminPersonalsListScreen() {
                 <Detail icon="credit-card" value={item.pix_key ? `Pix: ${item.pix_key}` : null} />
               </View>
 
+              {item.status === 'aprovado' && (
+                <View style={[styles.pendenteBanner, { borderColor: paymentInfo(item).color, backgroundColor: paymentInfo(item).late ? colors.redGlow : colors.accentGlow }]}>
+                  <Feather name={paymentInfo(item).late ? 'alert-circle' : 'check-circle'} size={11} color={paymentInfo(item).color} />
+                  <Text style={[styles.pendenteBannerText, { color: paymentInfo(item).color }]}>
+                    {paymentInfo(item).text}{paymentInfo(item).late ? ' — toque para confirmar' : ''}
+                  </Text>
+                </View>
+              )}
               {item.status === 'pendente' && (
                 <View style={styles.pendenteBanner}>
                   <Feather name="clock" size={11} color={colors.amber} />
@@ -327,6 +368,7 @@ export default function AdminPersonalsListScreen() {
         personal={selected}
         onClose={() => setModalVisible(false)}
         onConfirm={handleConfirmAction}
+        onConfirmPayment={handleConfirmPayment}
       />
     </View>
   );
@@ -380,6 +422,7 @@ const styles = StyleSheet.create({
   modalName: { fontSize: fs(16), fontWeight: '800', color: colors.text, marginBottom: vs(2) },
   modalEmail: { fontSize: fs(11), color: colors.textDim, marginBottom: vs(4) },
   modalCref: { fontSize: fs(10), color: colors.blue, fontWeight: '600', marginBottom: vs(8) },
+  modalPay: { fontSize: fs(10), fontWeight: '700', marginTop: vs(8) },
   modalBio: { fontSize: fs(11), color: colors.textDim, lineHeight: 18, marginVertical: 8 },
   modalDivider: { height: 1, backgroundColor: colors.border, marginVertical: 16 },
   modalSectionLabel: { fontSize: fs(10), fontWeight: '700', color: colors.textDim,

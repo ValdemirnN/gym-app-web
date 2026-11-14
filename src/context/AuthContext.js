@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Linking } from 'react-native';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { getAccessBlock } from '../lib/accessControl';
 
 const AuthContext = createContext({});
 
@@ -42,6 +43,17 @@ export function AuthProvider({ children }) {
   // e ainda precisa cadastrar uma nova senha antes de usar o resto do app.
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const handlingRecoveryLink = useRef(false);
+
+  // ── Bloqueio por pagamento ──────────────────────────────────────────────
+  // nowTick força a reavaliação da data de vencimento enquanto o app está
+  // aberto (o bloqueio entra no minuto em que o prazo vence, sem precisar
+  // sair e entrar de novo).
+  const sessionRef = useRef(null);
+  sessionRef.current = session;
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const accessBlock = useMemo(() => getAccessBlock(profile, new Date(nowTick)), [profile, nowTick]);
+  const blockedRef = useRef(false);
+  blockedRef.current = !!accessBlock;
 
   const loadProfile = async (userId, authUser) => {
     if (!userId) {
@@ -203,6 +215,33 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  // Reavaliação periódica + ao voltar pro app. Enquanto bloqueado, busca o
+  // profile de novo a cada 30s para liberar sozinho quando o admin/personal
+  // confirmar o pagamento. Atualização "silenciosa": se a rede falhar, mantém
+  // o profile atual em vez de derrubar o usuário na tela de erro.
+  useEffect(() => {
+    const quietRefresh = async () => {
+      const user = sessionRef.current?.user;
+      if (!user?.id) return;
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+      if (!error && data) setProfile(data);
+    };
+    const interval = setInterval(() => {
+      setNowTick(Date.now());
+      if (blockedRef.current) quietRefresh();
+    }, 30000);
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setNowTick(Date.now());
+        quietRefresh();
+      }
+    });
+    return () => {
+      clearInterval(interval);
+      appStateSub.remove();
+    };
+  }, []);
+
   // extra = { name, role, personal_id, health_conditions, health_restrictions, pix_key, whatsapp, ...demais campos opcionais de perfil }
   // O profile é criado automaticamente por um trigger no banco (ver supabase/schema_v3.sql
   // e supabase/schema_v32_signup_extra_fields.sql), por isso mandamos os dados extras em
@@ -328,6 +367,7 @@ export function AuthProvider({ children }) {
         profileMissing,
         loading,
         isPasswordRecovery,
+        accessBlock,
         signUp,
         signIn,
         signOut,

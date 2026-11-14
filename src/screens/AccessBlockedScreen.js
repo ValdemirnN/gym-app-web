@@ -1,125 +1,157 @@
 import React, { useCallback, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Clipboard, Alert,
+  View, Text, StyleSheet, TouchableOpacity, Alert, Platform, ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
-import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { getAccessBlock } from '../lib/accessControl';
 import { colors, radius } from '../theme/theme';
-import { s, vs, ms, fs, isSmallDevice, screenPaddingH, screenPaddingTop } from '../utils/responsive';
+import { s, vs, fs } from '../utils/responsive';
 import StudentOwnSubscriptionScreen from './StudentOwnSubscriptionScreen';
+import PersonalFinancialScreen from './PersonalFinancialScreen';
 
 const BlockedStack = createNativeStackNavigator();
 
+async function copyText(text) {
+  try {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    // Clipboard saiu do núcleo do React Native; o try/catch evita crash no nativo.
+    const RN = require('react-native');
+    if (RN.Clipboard?.setString) {
+      RN.Clipboard.setString(text);
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
 // ─── Tela de parede (wall) ────────────────────────────────────────────────────
 function BlockedWallScreen({ navigation }) {
-  const { session, profile, signOut } = useAuth();
-  const [pixKey, setPixKey] = useState(null);
-  const [accessInfo, setAccessInfo] = useState(null);
+  const { session, profile, accessBlock, signOut } = useAuth();
+  const isPersonal = profile?.role === 'personal';
+  const [payee, setPayee] = useState(null); // { name, pix_key } de quem recebe
+  const [checking, setChecking] = useState(false);
 
+  // Aluno paga o personal; personal paga a plataforma (conta admin).
   const load = useCallback(async () => {
-    const { data: acc } = await supabase
-      .from('profiles')
-      .select('access_expires_at, access_blocked, monthly_fee, personal_id')
-      .eq('id', session.user.id)
-      .single();
-    setAccessInfo(acc);
-
-    if (acc?.personal_id) {
-      const { data: personal } = await supabase
+    if (isPersonal) {
+      const { data } = await supabase.rpc('get_platform_pix');
+      setPayee(Array.isArray(data) ? data[0] : data);
+      return;
+    }
+    if (profile?.personal_id) {
+      const { data } = await supabase
         .from('profiles')
         .select('pix_key, name')
-        .eq('id', acc.personal_id)
+        .eq('id', profile.personal_id)
         .single();
-      setPixKey(personal);
+      setPayee(data);
     }
-  }, [session]);
+  }, [isPersonal, profile?.personal_id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const copiarPix = () => {
-    if (pixKey?.pix_key) {
-      Clipboard.setString(pixKey.pix_key);
-      Alert.alert('Copiado!', 'Chave Pix copiada para a área de transferência.');
+  const copiarPix = async () => {
+    if (!payee?.pix_key) return;
+    const ok = await copyText(payee.pix_key);
+    Alert.alert(ok ? 'Copiado!' : 'Chave Pix', ok ? 'Chave Pix copiada para a área de transferência.' : payee.pix_key);
+  };
+
+  // Puxa o profile de novo: se o pagamento já foi confirmado, o app libera na hora.
+  const verificarNovamente = async () => {
+    setChecking(true);
+    const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    setChecking(false);
+    // O AuthContext também refaz a leitura sozinho a cada 30s; aqui só damos feedback.
+    if (data) {
+      if (getAccessBlock(data)) {
+        Alert.alert('Ainda bloqueado', 'O pagamento ainda não foi confirmado.');
+      }
     }
   };
 
-  const now = new Date();
-  const accessExpired = accessInfo?.access_expires_at && new Date(accessInfo.access_expires_at) < now;
-  const manualBlock = accessInfo?.access_blocked;
-  const neverPaid = !accessInfo?.access_expires_at;
+  const fee = isPersonal ? profile?.subscription_price : profile?.monthly_fee;
+  const confirmador = isPersonal ? 'o administrador' : 'seu personal';
 
-  const reason = manualBlock
-    ? 'Seu acesso foi suspenso pelo seu personal.'
-    : accessExpired
-    ? 'Seu acesso expirou por falta de pagamento confirmado.'
-    : 'Nenhum pagamento foi confirmado ainda para liberar seu acesso.';
+  const reason = accessBlock?.reason === 'manual'
+    ? (isPersonal ? 'Seu acesso foi suspenso pelo administrador.' : 'Seu acesso foi suspenso pelo seu personal.')
+    : `A data de pagamento passou e o pagamento ainda não foi confirmado por ${confirmador}.`;
 
   return (
     <View style={styles.container}>
-      {/* Ícone central */}
       <View style={styles.iconWrap}>
         <Feather name="lock" size={48} color={colors.red} />
       </View>
 
-      {/* Título */}
       <Text style={styles.heading}>Acesso suspenso</Text>
       <Text style={styles.reason}>{reason}</Text>
 
-      {/* Info de quando expirou */}
-      {accessExpired && accessInfo?.access_expires_at && (
+      {accessBlock?.reason === 'expired' && accessBlock.expiresAt && (
         <View style={styles.infoBox}>
           <Feather name="calendar" size={14} color={colors.textDim} />
           <Text style={styles.infoText}>
-            Expirou em {new Date(accessInfo.access_expires_at).toLocaleDateString('pt-BR')}
+            Venceu em {accessBlock.expiresAt.toLocaleDateString('pt-BR')}
           </Text>
         </View>
       )}
 
-      {/* Mensalidade */}
-      {accessInfo?.monthly_fee && (
+      {!!fee && (
         <View style={styles.infoBox}>
           <Feather name="tag" size={14} color={colors.textDim} />
           <Text style={styles.infoText}>
-            Mensalidade: R$ {Number(accessInfo.monthly_fee).toFixed(2)} / mês
+            Mensalidade: R$ {Number(fee).toFixed(2)} / mês
           </Text>
         </View>
       )}
 
-      {/* Chave pix */}
-      {pixKey?.pix_key && (
+      {payee?.pix_key && (
         <View style={styles.pixCard}>
-          <Text style={styles.pixLabel}>Chave Pix do personal</Text>
+          <Text style={styles.pixLabel}>
+            {isPersonal ? 'Chave Pix da plataforma' : 'Chave Pix do personal'}
+          </Text>
           <TouchableOpacity style={styles.pixRow} onPress={copiarPix} activeOpacity={0.7}>
-            <Text style={styles.pixKey} numberOfLines={1}>{pixKey.pix_key}</Text>
+            <Text style={styles.pixKey} numberOfLines={1} selectable>{payee.pix_key}</Text>
             <View style={styles.pixCopyBtn}>
               <Feather name="copy" size={14} color={colors.accent} />
               <Text style={styles.pixCopyText}>Copiar</Text>
             </View>
           </TouchableOpacity>
-          <Text style={styles.pixNote}>Após pagar, avise seu personal para confirmar.</Text>
+          <Text style={styles.pixNote}>Após pagar, avise {confirmador} para confirmar.</Text>
         </View>
       )}
 
-      {/* Orientação */}
       <Text style={styles.orientacao}>
-        Para recuperar o acesso, realize o pagamento e peça ao seu personal que confirme no app.
+        Para recuperar o acesso, realize o pagamento e peça a {confirmador} que confirme no app.
+        O acesso volta assim que a confirmação for feita.
       </Text>
 
-      {/* Botão principal: ir para Faturas */}
       <TouchableOpacity
         style={styles.btnFaturas}
-        onPress={() => navigation.navigate('FaturasBlocked')}
+        onPress={verificarNovamente}
         activeOpacity={0.85}
+        disabled={checking}
       >
-        <Feather name="credit-card" size={18} color="#04170F" />
-        <Text style={styles.btnFaturasText}>Ver faturas</Text>
+        {checking
+          ? <ActivityIndicator color="#04170F" />
+          : <Feather name="refresh-cw" size={18} color="#04170F" />}
+        <Text style={styles.btnFaturasText}>Já paguei — verificar</Text>
       </TouchableOpacity>
 
-      {/* Sair */}
+      <TouchableOpacity
+        style={styles.btnSair}
+        onPress={() => navigation.navigate(isPersonal ? 'FinanceiroBlocked' : 'FaturasBlocked')}
+        activeOpacity={0.7}
+      >
+        <Feather name="credit-card" size={15} color={colors.textDim} />
+        <Text style={styles.btnSairText}>{isPersonal ? 'Ver financeiro' : 'Ver faturas'}</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.btnSair} onPress={signOut} activeOpacity={0.7}>
         <Feather name="log-out" size={15} color={colors.textDim} />
         <Text style={styles.btnSairText}>Sair da conta</Text>
@@ -128,12 +160,13 @@ function BlockedWallScreen({ navigation }) {
   );
 }
 
-// ─── Stack restrito: apenas wall + tela de faturas ───────────────────────────
+// ─── Stack restrito: apenas wall + tela de faturas/financeiro ────────────────
 export default function AccessBlockedScreen() {
   return (
     <BlockedStack.Navigator screenOptions={{ headerShown: false }}>
       <BlockedStack.Screen name="BlockedWall" component={BlockedWallScreen} />
       <BlockedStack.Screen name="FaturasBlocked" component={StudentOwnSubscriptionScreen} />
+      <BlockedStack.Screen name="FinanceiroBlocked" component={PersonalFinancialScreen} />
     </BlockedStack.Navigator>
   );
 }
