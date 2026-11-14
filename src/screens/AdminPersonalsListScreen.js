@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { colors, radius } from '../theme/theme';
+import AdminPersonalEditModal, { paymentInfo } from './AdminPersonalEditModal';
 import { s, vs, ms, fs, isSmallDevice, screenPaddingH, screenPaddingTop } from '../utils/responsive';
 
 // ─── constantes ──────────────────────────────────────────────
@@ -18,17 +19,8 @@ const STATUS_META = {
 };
 
 const PAGAMENTO = '__pagamento';
+const EDITAR = '__editar';
 const FILTER_TABS = ['todos','pendente','aprovado','suspenso','recusado'];
-
-// ─── vencimento da mensalidade do personal ───────────────────
-function paymentInfo(p) {
-  if (!p.subscription_expires_at) return { text: 'Sem vencimento definido', color: colors.textDim, late: false };
-  const d = new Date(p.subscription_expires_at);
-  const label = d.toLocaleDateString('pt-BR');
-  if (p.subscription_status === 'bloqueado') return { text: 'Bloqueado manualmente', color: colors.red, late: true };
-  if (d < new Date()) return { text: `Vencido em ${label} — sem pagamento confirmado`, color: colors.red, late: true };
-  return { text: `Mensalidade em dia · vence em ${label}`, color: colors.accent, late: false };
-}
 
 // ─── badge ───────────────────────────────────────────────────
 function Badge({ status }) {
@@ -52,13 +44,13 @@ function Detail({ icon, value }) {
 }
 
 // ─── modal de ação ───────────────────────────────────────────
-function ActionModal({ visible, personal, onClose, onConfirm, onConfirmPayment }) {
+function ActionModal({ visible, personal, onClose, onConfirm, onConfirmPayment, onEdit }) {
   const [reason, setReason] = useState('');
   const [targetStatus, setTargetStatus] = useState(null);
 
   const actions = personal ? (() => {
     const s = personal.status;
-    const list = [];
+    const list = [{ status:EDITAR, label:'Editar dados e controlar acesso', icon:'edit-2', color:colors.blue }];
     if (s === 'pendente')  list.push({ status:'aprovado', label:'Aprovar',   icon:'check-circle', color:colors.accent });
     if (s === 'pendente')  list.push({ status:'recusado', label:'Recusar',   icon:'x-circle',     color:colors.red   });
     if (s === 'aprovado')  list.push({ status:PAGAMENTO, label:'Confirmar pagamento (+1 mês)', icon:'dollar-sign', color:colors.accent });
@@ -71,7 +63,10 @@ function ActionModal({ visible, personal, onClose, onConfirm, onConfirmPayment }
 
   const needsReason = targetStatus === 'recusado' || targetStatus === 'suspenso';
 
-  const handleSelect = (status) => setTargetStatus(status);
+  const handleSelect = (status) => {
+    if (status === EDITAR) { setTargetStatus(null); setReason(''); onEdit(personal); return; }
+    setTargetStatus(status);
+  };
 
   const handleConfirm = () => {
     if (needsReason && !reason.trim()) {
@@ -178,13 +173,14 @@ export default function AdminPersonalsListScreen() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
       .from('profiles')
-      .select('id, name, email, status, pix_key, whatsapp, cref_number, cref_state, bio, instagram_url, created_at, approved_at, subscription_expires_at, subscription_status, subscription_price')
+      .select('*')
       .eq('role', 'personal')
       .order('created_at', { ascending: false });
 
@@ -195,6 +191,7 @@ export default function AdminPersonalsListScreen() {
     setPersonals(sorted);
     applyFilters(sorted, filter, search);
     setLoading(false);
+    return sorted;
   }, []);
 
   const applyFilters = (list, tab, q) => {
@@ -245,15 +242,30 @@ export default function AdminPersonalsListScreen() {
 
   const handleConfirmPayment = async (personal) => {
     setModalVisible(false);
-    const { data, error } = await supabase.rpc('admin_confirm_personal_payment', {
+    // Função única do banco (a mesma que o app mobile usa).
+    const { error } = await supabase.rpc('admin_confirmar_pagamento_personal', {
       p_personal_id: personal.id,
+      p_meses: 1,
     });
     if (error) {
-      Alert.alert('Erro ao confirmar pagamento', error.message + '\n\nRode o supabase/schema_v33_payment_block.sql se ainda não rodou.');
+      Alert.alert('Erro ao confirmar pagamento', error.message);
       return;
     }
-    Alert.alert('Pagamento confirmado', `Acesso liberado até ${new Date(data).toLocaleDateString('pt-BR')}.`);
+    Alert.alert('Pagamento confirmado', 'Acesso do personal renovado por +1 mês.');
     await load();
+  };
+
+  const handleEdit = (personal) => {
+    setModalVisible(false);
+    setSelected(personal);
+    setEditVisible(true);
+  };
+
+  // Depois de salvar no editor: recarrega a lista e mantém o personal aberto já atualizado.
+  const handleEditChanged = async () => {
+    const list = await load();
+    const fresh = (list || []).find((p) => p.id === selected?.id);
+    if (fresh) setSelected(fresh);
   };
 
   const counts = FILTER_TABS.reduce((acc, tab) => {
@@ -369,6 +381,14 @@ export default function AdminPersonalsListScreen() {
         onClose={() => setModalVisible(false)}
         onConfirm={handleConfirmAction}
         onConfirmPayment={handleConfirmPayment}
+        onEdit={handleEdit}
+      />
+
+      <AdminPersonalEditModal
+        visible={editVisible}
+        personal={selected}
+        onClose={() => setEditVisible(false)}
+        onChanged={handleEditChanged}
       />
     </View>
   );

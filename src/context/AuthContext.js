@@ -51,7 +51,18 @@ export function AuthProvider({ children }) {
   const sessionRef = useRef(null);
   sessionRef.current = session;
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const accessBlock = useMemo(() => getAccessBlock(profile, new Date(nowTick)), [profile, nowTick]);
+  // Diferença entre a hora do servidor e a do aparelho. Evita escapar do bloqueio
+  // atrasando a data do celular (e bloquear cedo demais se o relógio estiver adiantado).
+  const [clockSkew, setClockSkew] = useState(0);
+  const accessBlock = useMemo(
+    () => getAccessBlock(profile, new Date(nowTick + clockSkew)),
+    [profile, nowTick, clockSkew]
+  );
+  const syncClock = async () => {
+    const { data, error } = await supabase.rpc('get_my_access_status');
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!error && row?.server_now) setClockSkew(new Date(row.server_now).getTime() - Date.now());
+  };
   const blockedRef = useRef(false);
   blockedRef.current = !!accessBlock;
 
@@ -225,6 +236,7 @@ export function AuthProvider({ children }) {
       if (!user?.id) return;
       const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
       if (!error && data) setProfile(data);
+      syncClock();
     };
     const interval = setInterval(() => {
       setNowTick(Date.now());
@@ -241,6 +253,11 @@ export function AuthProvider({ children }) {
       appStateSub.remove();
     };
   }, []);
+
+  // Sincroniza o relógio com o servidor ao entrar na conta.
+  useEffect(() => {
+    if (session?.user?.id) syncClock();
+  }, [session?.user?.id]);
 
   // extra = { name, role, personal_id, health_conditions, health_restrictions, pix_key, whatsapp, ...demais campos opcionais de perfil }
   // O profile é criado automaticamente por um trigger no banco (ver supabase/schema_v3.sql
